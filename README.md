@@ -1,4 +1,4 @@
---// SERVICES COMBINADOS (LOCK ANTI-VIBRACIÓN + DASH SUAVE)
+--// SERVICES COMBINADOS (LOCK ORIGINAL + DASH SUAVE)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,7 +14,7 @@ local humanoid = character:WaitForChild("Humanoid")
 local inputEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("Input")
 
 -------------------------------------------------------------------
---// VARIABLES SCRIPT 1 (LOCK - OPTIMIZADO)
+--// VARIABLES SCRIPT 1 (FLINTZ LOCK - ORIGINAL)
 -------------------------------------------------------------------
 local TARGET_ANIMS_S1 = {
 	["rbxassetid://18790224306"] = true,
@@ -24,10 +24,10 @@ local isLockedS1 = false
 local lockedTargetS1 = nil
 local highlightS1 = nil
 local lookConnS1 = nil
-local DISTANCIA_ESPALDA_S1 = 2.5 
+local DISTANCIA_ESPALDA_S1 = 2
 
 -------------------------------------------------------------------
---// VARIABLES SCRIPT 2 (DASH SUAVE)
+--// VARIABLES SCRIPT 2 (DASH OPTIMIZADO)
 -------------------------------------------------------------------
 local dashForceGround = 140      
 local dashForceAir = 115         
@@ -54,6 +54,7 @@ local forwardTrackS2 = loadAnim("rbxassetid://18783040383")
 --// FUNCIONES COMPARTIDAS
 -------------------------------------------------------------------
 local function lanzarGolpe()
+    -- Ejecución inmediata sin esperas
     local tool = character:FindFirstChildOfClass("Tool")
     if tool then tool:Activate() end
 	inputEvent:FireServer("M1")
@@ -64,19 +65,18 @@ local function showNotification()
 	local notifFrame = Instance.new("TextLabel", notifGui)
 	notifFrame.Size = UDim2.fromScale(0.25, 0.05); notifFrame.Position = UDim2.fromScale(0.375, -0.1)
 	notifFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35); notifFrame.TextColor3 = Color3.fromRGB(255, 255, 255)
-	notifFrame.Text = "Fixed Facing & No Jitter | AlanBeikers"; notifFrame.Font = Enum.Font.GothamBold; notifFrame.TextSize = 13
+	notifFrame.Text = "M1 Priority Fixed | Wide Orbit"; notifFrame.Font = Enum.Font.GothamBold; notifFrame.TextSize = 14
 	Instance.new("UICorner", notifFrame); notifFrame:TweenPosition(UDim2.fromScale(0.375, 0.05), "Out", "Back", 0.5)
 	task.wait(2.5); notifFrame:TweenPosition(UDim2.fromScale(0.375, -0.1), "In", "Quad", 0.5); task.delay(0.6, function() notifGui:Destroy() end)
 end
 
 -------------------------------------------------------------------
---// LÓGICA LOCK
+--// LÓGICA SCRIPT 1 (TU LOCK ORIGINAL)
 -------------------------------------------------------------------
 local clearLockS1, lockTargetS1Func
 
 clearLockS1 = function()
 	isLockedS1 = false; lockedTargetS1 = nil
-    humanoid.AutoRotate = true 
 	if highlightS1 then highlightS1:Destroy() highlightS1 = nil end
 	if lookConnS1 then lookConnS1:Disconnect() lookConnS1 = nil end
     local gui = player.PlayerGui:FindFirstChild("ModernLockGui")
@@ -110,29 +110,22 @@ lockTargetS1Func = function()
 	local target = getClosestToCamera()
 	if not target then return end
 	lockedTargetS1 = target; isLockedS1 = true
-    humanoid.AutoRotate = false 
 	highlightS1 = Instance.new("Highlight", target); highlightS1.FillColor = Color3.fromRGB(255, 60, 60)
-    
     local gui = player.PlayerGui:FindFirstChild("ModernLockGui")
     if gui then
         local btn = gui.MainFrame.lockBtn
         btn.Text = "UNLOCK"; btn.TextColor3 = Color3.fromRGB(60, 200, 60)
         gui.MainFrame.UIStroke.Color = Color3.fromRGB(60, 200, 60)
     end
-    
 	lookConnS1 = RunService.RenderStepped:Connect(function()
 		if not isLockedS1 or not lockedTargetS1 then return end
 		local tRoot = lockedTargetS1:FindFirstChild("HumanoidRootPart")
 		local tHum = lockedTargetS1:FindFirstChild("Humanoid")
 		if not tRoot or not tHum or tHum.Health <= 0 then clearLockS1() return end
-        
-        local lookPos = Vector3.new(tRoot.Position.X, rootPart.Position.Y, tRoot.Position.Z)
-		rootPart.CFrame = CFrame.lookAt(rootPart.Position, lookPos)
-
-        if humanoid.MoveDirection.Magnitude < 0.05 and not isDashingS2 then
+		rootPart.CFrame = rootPart.CFrame:Lerp(CFrame.lookAt(rootPart.Position, Vector3.new(tRoot.Position.X, rootPart.Position.Y, tRoot.Position.Z)), 0.4)
+        if humanoid.MoveDirection.Magnitude < 0.1 and not isDashingS2 then
             local pEspalda = tRoot.Position - (tRoot.CFrame.LookVector * DISTANCIA_ESPALDA_S1)
-            local dist = (pEspalda - rootPart.Position).Magnitude
-            if dist > 1.2 then
+            if (pEspalda - rootPart.Position).Magnitude > 2.5 then
                 humanoid:Move((pEspalda - rootPart.Position).Unit, false)
             end
         end
@@ -140,18 +133,18 @@ lockTargetS1Func = function()
 end
 
 -------------------------------------------------------------------
---// LÓGICA DASH
+--// LÓGICA SCRIPT 2 (DASH OPTIMIZADO)
 -------------------------------------------------------------------
 local function applyDashS2(track, duration)
     if isDashingS2 then return end
     isDashingS2 = true
-    humanoid.AutoRotate = false 
     
+    -- Segundo disparo preventivo para asegurar impacto
     lanzarGolpe()
     track:Play()
     
     local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(1, 1, 1) * 500000; bv.Parent = rootPart
+    bv.MaxForce = Vector3.new(500000, 500000, 500000); bv.Parent = rootPart
     
     local forceToApply = (humanoid.FloorMaterial == Enum.Material.Air) and dashForceAir or dashForceGround
     local start = tick()
@@ -180,20 +173,17 @@ local function applyDashS2(track, duration)
                 dir = humanoid.MoveDirection
                 if dir.Magnitude < 0.1 then dir = rootPart.CFrame.LookVector end
             end
-            
             local fade = 1 - (elapsed / duration) ^ 2
             bv.Velocity = dir * (forceToApply * (0.4 + 0.6 * fade))
-            local targetRot = CFrame.lookAt(rootPart.Position, rootPart.Position + Vector3.new(dir.X, 0, dir.Z))
-            rootPart.CFrame = rootPart.CFrame:Lerp(targetRot, rotationSmoothnessS2)
+            rootPart.CFrame = rootPart.CFrame:Lerp(CFrame.new(rootPart.Position, rootPart.Position + dir), rotationSmoothnessS2)
         else
             bv:Destroy(); conn:Disconnect(); isDashingS2 = false
-            if not isLockedS1 then humanoid.AutoRotate = true end
         end
     end)
 end
 
 -------------------------------------------------------------------
---// INTERFACES
+--// INTERFACES (CON PADLOCK)
 -------------------------------------------------------------------
 local function createGuis()
     local dragEnabled = true 
@@ -233,6 +223,7 @@ local function createGuis()
         if isDashingS2 or humanoid.Health <= 0 then return end
         if tick() - lastGoTimeS2 >= cooldownDurationS2 then
             lastGoTimeS2 = tick()
+            -- EJECUCIÓN INSTANTÁNEA: Primero el golpe, luego el resto
             lanzarGolpe() 
             inputEvent:FireServer("Dash", false) 
             applyDashS2(forwardTrackS2, dashDurationDefault)
@@ -241,50 +232,11 @@ local function createGuis()
 end
 
 -------------------------------------------------------------------
---// DETECCIÓN ANIMACIONES (RE-LOCK IMPLEMENTADO)
+--// DETECCIÓN ANIMACIONES
 -------------------------------------------------------------------
 local function setupDetection(hum)
 	hum.AnimationPlayed:Connect(function(track)
 		local id = tostring(track.Animation.AnimationId)
-        
-        -- DESACTIVACIÓN Y RE-BLOQUEO TEMPORAL
-        if id:find("18790224306") then
-            if isLockedS1 and lockedTargetS1 then
-                local savedTarget = lockedTargetS1
-                clearLockS1()
-                task.spawn(function()
-                    -- Esperar hasta 0.5s antes del final de la animación
-                    task.wait(math.max(0, track.Length - 0.9))
-                    if savedTarget and savedTarget.Parent and not isLockedS1 then
-                        -- Reactivar Lock al mismo objetivo
-                        lockedTargetS1 = savedTarget; isLockedS1 = true
-                        humanoid.AutoRotate = false 
-                        highlightS1 = Instance.new("Highlight", savedTarget); highlightS1.FillColor = Color3.fromRGB(255, 60, 60)
-                        
-                        local gui = player.PlayerGui:FindFirstChild("ModernLockGui")
-                        if gui then
-                            local btn = gui.MainFrame.lockBtn
-                            btn.Text = "UNLOCK"; btn.TextColor3 = Color3.fromRGB(60, 200, 60)
-                            gui.MainFrame.UIStroke.Color = Color3.fromRGB(60, 200, 60)
-                        end
-
-                        lookConnS1 = RunService.RenderStepped:Connect(function()
-                            if not isLockedS1 or not lockedTargetS1 then return end
-                            local tRoot = lockedTargetS1:FindFirstChild("HumanoidRootPart")
-                            local tHum = lockedTargetS1:FindFirstChild("Humanoid")
-                            if not tRoot or not tHum or tHum.Health <= 0 then clearLockS1() return end
-                            local lookPos = Vector3.new(tRoot.Position.X, rootPart.Position.Y, tRoot.Position.Z)
-                            rootPart.CFrame = CFrame.lookAt(rootPart.Position, lookPos)
-                            if humanoid.MoveDirection.Magnitude < 0.05 and not isDashingS2 then
-                                local pEspalda = tRoot.Position - (tRoot.CFrame.LookVector * DISTANCIA_ESPALDA_S1)
-                                if (pEspalda - rootPart.Position).Magnitude > 1.2 then humanoid:Move((pEspalda - rootPart.Position).Unit, false) end
-                            end
-                        end)
-                    end
-                end)
-            end
-        end
-
 		if TARGET_ANIMS_S1[id] or ANIMS_GOLPE_S2[id] or id:find("18790224306") then 
             lanzarGolpe() 
         end
