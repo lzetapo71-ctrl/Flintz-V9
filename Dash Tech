@@ -1,0 +1,349 @@
+-- SCRIPT COMBINADO: DASH + LOOP + DETECCIÓN DE ANIMACIONES (ACTUALIZADO)
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+local runService = game:GetService("RunService")
+local camera = workspace.CurrentCamera
+local replicatedStorage = game:GetService("ReplicatedStorage")
+
+-- CONFIGURACIÓN DASH
+local forwardAnimId = "rbxassetid://18783040383" 
+local backwardAnimId = "rbxassetid://18790224306" 
+local dashForce = 150 
+local dashDuration = 0.30 
+local rotationSmoothness = 0.1 
+local specialCooldown = 2 
+local isOnCooldown = false
+local cooldownThread = nil
+
+-- CONFIGURACIÓN LOOP Y SECUENCIA
+local isActive = false 
+local lastLoopAnimTime = 0 
+
+-- CARGAR ANIMACIONES
+local forwardAnim = Instance.new("Animation")
+forwardAnim.AnimationId = forwardAnimId
+local forwardTrack = humanoid:LoadAnimation(forwardAnim)
+
+local backwardAnim = Instance.new("Animation")
+backwardAnim.AnimationId = backwardAnimId
+local backwardTrack = humanoid:LoadAnimation(backwardAnim)
+
+-- INTERFAZ (GUI DASH)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CustomDashGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game.CoreGui
+
+local GoButton = Instance.new("TextButton")
+GoButton.Name = "GoButton"
+GoButton.Parent = ScreenGui
+GoButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+GoButton.Position = UDim2.new(0.5, -50, 0.8, 0)
+GoButton.Size = UDim2.new(0, 100, 0, 50)
+GoButton.Font = Enum.Font.SourceSansBold
+GoButton.Text = "Go"
+GoButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+GoButton.TextSize = 30
+GoButton.Active = true
+GoButton.Draggable = true
+
+local GoCorner = Instance.new("UICorner")
+GoCorner.CornerRadius = UDim.new(0, 10)
+GoCorner.Parent = GoButton
+
+local LockButton = Instance.new("TextButton")
+LockButton.Name = "LockButton"
+LockButton.Parent = GoButton
+LockButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+LockButton.BackgroundTransparency = 0.3
+LockButton.Position = UDim2.new(1, 5, 0, 0)
+LockButton.Size = UDim2.new(0, 30, 0, 30)
+LockButton.Font = Enum.Font.SourceSansBold
+LockButton.Text = "🔓"
+LockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+LockButton.TextSize = 20
+
+local LockCorner = Instance.new("UICorner")
+LockCorner.CornerRadius = UDim.new(0, 5)
+LockCorner.Parent = LockButton
+
+-- INTERFAZ (GUI TOGGLE LOOP - AHORA DEBAJO DEL CANDADO)
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Parent = GoButton -- Parentado al GoButton para seguir al candado
+ToggleButton.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+ToggleButton.Position = UDim2.new(1, 5, 0, 35) -- Posicionado debajo del candado (30px + 5px de espacio)
+ToggleButton.Size = UDim2.new(0, 30, 0, 30) -- Mismo tamaño que el candado
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.Text = "OFF"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 12 -- Tamaño reducido para el botón pequeño
+ToggleButton.Active = true
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 5)
+ToggleCorner.Parent = ToggleButton
+
+-- LÓGICA DEL CANDADO
+local isLocked = false
+LockButton.MouseButton1Click:Connect(function()
+    isLocked = not isLocked
+    GoButton.Draggable = not isLocked
+    LockButton.Text = isLocked and "🔒" or "🔓"
+    LockButton.BackgroundColor3 = isLocked and Color3.fromRGB(150, 0, 0) or Color3.fromRGB(50, 50, 50)
+end)
+
+-- LÓGICA DEL INTERRUPTOR LOOP
+ToggleButton.MouseButton1Click:Connect(function()
+    isActive = not isActive
+    ToggleButton.Text = isActive and "ON" or "OFF"
+    ToggleButton.BackgroundColor3 = isActive and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(170, 0, 0)
+end)
+
+-- FUNCIÓN MOVIMIENTO LOOP
+local function performLoopMovement()
+    if not isActive then return end
+    local startCFrame = rootPart.CFrame
+    local steps, radius, forwardAdvance = 20, 5, 4
+    task.spawn(function()
+        for i = 1, steps do
+            local angle = math.rad((i / steps) * 360)
+            local xOffset = math.sin(angle) * radius
+            local zOffset = (math.cos(angle) * -radius) + radius
+            local progressForward = (i / steps) * forwardAdvance
+            rootPart.CFrame = startCFrame * CFrame.new(xOffset, 0, -zOffset - progressForward) * CFrame.Angles(0, angle, 0)
+            task.wait(0.01)
+        end
+        rootPart.CFrame = startCFrame * CFrame.new(0, 0, -forwardAdvance)
+    end)
+end
+
+-- FUNCIÓN DASH FÍSICO
+local function applyPhysicalDash(selectedTrack)
+    selectedTrack:Play()
+    local velocity = Instance.new("BodyVelocity")
+    velocity.MaxForce = Vector3.new(1, 1, 1) * 50000 
+    velocity.Parent = rootPart
+    local dashDirection = humanoid.MoveDirection
+    if dashDirection.Magnitude < 0.1 then dashDirection = rootPart.CFrame.LookVector end
+    local startTime = tick()
+    local connection
+    connection = runService.RenderStepped:Connect(function()
+        if tick() - startTime < dashDuration then
+            for _, v in pairs(workspace:GetChildren()) do
+                if v:IsA("Model") and v ~= character and v:FindFirstChild("Humanoid") then
+                    for _, part in pairs(v:GetChildren()) do
+                        if part:IsA("BasePart") then part.CanCollide = false end
+                    end
+                end
+            end
+            if humanoid.MoveDirection.Magnitude > 0.1 then dashDirection = humanoid.MoveDirection end
+            velocity.Velocity = dashDirection * dashForce
+            local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + dashDirection)
+            rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, rotationSmoothness)
+        else
+            velocity:Destroy()
+            connection:Disconnect()
+        end
+    end)
+end
+
+-- COOLDOWN VISUAL
+local function startCooldown()
+    if cooldownThread then task.cancel(cooldownThread) end 
+    isOnCooldown = true
+    GoButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    cooldownThread = task.spawn(function()
+        local timeLeft = specialCooldown
+        while timeLeft > 0 do
+            GoButton.Text = string.format("%.1fs", timeLeft)
+            task.wait(0.1)
+            timeLeft = timeLeft - 0.1
+        end
+        GoButton.Text = "Go"
+        GoButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        isOnCooldown = false
+    end)
+end
+
+-- EJECUCIÓN DASH (GO)
+local function executeDashLogic()
+    if isOnCooldown then return end
+    character = player.Character or player.CharacterAdded:Wait()
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
+    local inputRemote = replicatedStorage:WaitForChild("Events"):WaitForChild("Input")
+    startCooldown()
+    inputRemote:FireServer("Dash", false)
+    inputRemote:FireServer("M1")
+    local tool = character:FindFirstChildOfClass("Tool")
+    if tool then tool:Activate() end
+    task.wait(0.02)
+    applyPhysicalDash(forwardTrack)
+end
+
+GoButton.MouseButton1Click:Connect(executeDashLogic)
+
+-- ESCUCHADOR DE ANIMACIONES (Auto Dash Eliminado)
+local function connectAnimationListener(char)
+    local hum = char:WaitForChild("Humanoid")
+    hum.AnimationPlayed:Connect(function(animationTrack)
+        local animId = tostring(animationTrack.Animation.AnimationId)
+        if animId:find("14817925281") or animId:find("16523111553") then
+            lastLoopAnimTime = tick()
+            if isActive then
+                performLoopMovement()
+            end
+        end
+        -- Lógica de Auto-Dash (125750702) REMOVIDA
+    end)
+end
+
+connectAnimationListener(character)
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    rootPart = newChar:WaitForChild("HumanoidRootPart")
+    humanoid = newChar:WaitForChild("Humanoid")
+    connectAnimationListener(newChar)
+end) 
+
+-- SERVICIOS PARA BLOQUEO
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+-- CONFIGURACIÓN DE ANIMACIONES GOLPE
+local ANIMS_GOLPE_AL_INICIO = {
+	["rbxassetid://18783040383"] = true,
+	["rbxassetid://18783044488"] = true
+}
+local ANIM_GOLPE_AL_FINAL = "rbxassetid://18790224306"
+
+-- STATE BLOQUEO
+local isLockedLock = false
+local lockedTarget = nil
+local highlight = nil
+local lookConn = nil
+local DISTANCIA_ESPALDA = 5
+
+local function showNotification()
+	local notifGui = Instance.new("ScreenGui", player.PlayerGui)
+	local notifFrame = Instance.new("TextLabel", notifGui)
+	notifFrame.Size = UDim2.fromScale(0.25, 0.05)
+	notifFrame.Position = UDim2.fromScale(0.375, -0.1)
+	notifFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+	notifFrame.TextColor3 = Color3.fromRGB(255, 255, 255)
+	notifFrame.Text = "Hecho por @alanbeikersFFXD"
+	notifFrame.Font = Enum.Font.GothamBold
+	notifFrame.TextSize = 14
+	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 8)
+	notifFrame:TweenPosition(UDim2.fromScale(0.375, 0.05), "Out", "Back", 0.5)
+	task.wait(3)
+	notifFrame:TweenPosition(UDim2.fromScale(0.375, -0.1), "In", "Quad", 0.5)
+	task.delay(0.6, function() notifGui:Destroy() end)
+end
+
+local function setupAnimationDetection(humanoid)
+	humanoid.AnimationPlayed:Connect(function(track)
+		local id = track.Animation.AnimationId
+		if ANIMS_GOLPE_AL_INICIO[id] then
+			replicatedStorage:WaitForChild("Events"):WaitForChild("Input"):FireServer("M1")
+		elseif id == ANIM_GOLPE_AL_FINAL then
+			track.Stopped:Wait()
+			replicatedStorage:WaitForChild("Events"):WaitForChild("Input"):FireServer("M1")
+		end
+	end)
+end
+
+-- INTERFAZ LOCK MODERNA
+local guiLock = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+guiLock.Name = "ModernLockGui"
+guiLock.ResetOnSpawn = false
+
+local mainFrameLock = Instance.new("Frame", guiLock)
+mainFrameLock.Size = UDim2.fromOffset(120, 45)
+mainFrameLock.Position = UDim2.new(0.5, -60, 0.8, 0)
+mainFrameLock.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrameLock.Active = true 
+mainFrameLock.Draggable = true 
+Instance.new("UICorner", mainFrameLock).CornerRadius = UDim.new(0, 10)
+local strokeLock = Instance.new("UIStroke", mainFrameLock)
+strokeLock.Color = Color3.fromRGB(80, 80, 80)
+strokeLock.Thickness = 2
+
+local lockBtnLock = Instance.new("TextButton", mainFrameLock)
+lockBtnLock.Size = UDim2.fromScale(0.8, 0.7)
+lockBtnLock.Position = UDim2.fromScale(0.1, 0.15)
+lockBtnLock.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+lockBtnLock.Text = "LOCK"
+lockBtnLock.Font = Enum.Font.GothamBold
+lockBtnLock.TextColor3 = Color3.fromRGB(200, 60, 60)
+lockBtnLock.TextSize = 14
+Instance.new("UICorner", lockBtnLock).CornerRadius = UDim.new(0, 6)
+
+local function getClosestToCamera()
+	local closest, shortest = nil, 300
+	local container = workspace:FindFirstChild("Live") or workspace
+	for _, model in ipairs(container:GetChildren()) do
+		if model:IsA("Model") and model ~= player.Character then
+			local root = model:FindFirstChild("HumanoidRootPart")
+			local hum = model:FindFirstChild("Humanoid")
+			if root and hum and hum.Health > 0 then
+				local screenPos, visible = camera:WorldToViewportPoint(root.Position)
+				if visible then
+					local dist = (Vector2.new(screenPos.X, screenPos.Y) - camera.ViewportSize / 2).Magnitude
+					if dist < shortest then shortest = dist closest = model end
+				end
+			end
+		end
+	end
+	return closest
+end
+
+local function clearLock()
+	isLockedLock = false
+	lockedTarget = nil
+	if highlight then highlight:Destroy() highlight = nil end
+	if lookConn then lookConn:Disconnect() lookConn = nil end
+	lockBtnLock.Text = "LOCK"
+	lockBtnLock.TextColor3 = Color3.fromRGB(200, 60, 60)
+	strokeLock.Color = Color3.fromRGB(80, 80, 80)
+end
+
+local function lockTarget()
+	local target = getClosestToCamera()
+	if not target then return end
+	lockedTarget = target
+	isLockedLock = true
+	highlight = Instance.new("Highlight", target)
+	highlight.FillColor = Color3.fromRGB(255, 60, 60)
+	lockBtnLock.Text = "UNLOCK"
+	lockBtnLock.TextColor3 = Color3.fromRGB(60, 200, 60)
+	strokeLock.Color = Color3.fromRGB(60, 200, 60)
+	lookConn = runService.RenderStepped:Connect(function()
+		if not isLockedLock or not lockedTarget then return end
+		local tRoot = lockedTarget:FindFirstChild("HumanoidRootPart")
+		if not tRoot or lockedTarget.Humanoid.Health <= 0 then clearLock() return end
+		rootPart.CFrame = CFrame.lookAt(rootPart.Position, Vector3.new(tRoot.Position.X, rootPart.Position.Y, tRoot.Position.Z))
+		if humanoid.MoveDirection.Magnitude < 0.1 then
+			local pEspalda = tRoot.Position - (tRoot.CFrame.LookVector * DISTANCIA_ESPALDA)
+			if (pEspalda - rootPart.Position).Magnitude > 2 then
+				humanoid:Move((pEspalda - rootPart.Position).Unit, false)
+			end
+		end
+	end)
+end
+
+lockBtnLock.MouseButton1Click:Connect(function()
+	if isLockedLock then clearLock() else lockTarget() end
+end)
+
+player.CharacterAdded:Connect(function(char)
+	clearLock()
+	setupAnimationDetection(char:WaitForChild("Humanoid"))
+end)
+
+if player.Character then setupAnimationDetection(player.Character:WaitForChild("Humanoid")) end
+showNotification()
